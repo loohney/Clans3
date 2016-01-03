@@ -84,32 +84,47 @@ namespace Clans3
         {
             int clanindex = findClan(args.Player.User.ID);
 
-            if (args.Parameters.Count == 1 && args.Parameters[0].ToLower() == "help")
+            if (args.Parameters.Count > 0 && args.Parameters[0].ToLower() == "help")
             {
-                args.Player.SendInfoMessage("Available Commands:");
+                List<string> cmds = new List<string>();
                 
                 if (clanindex != -1 && clans[clanindex].owner == args.Player.User.ID)
                 {
-                    args.Player.SendInfoMessage("/clan prefix <chat prefix>");
-                    args.Player.SendInfoMessage("/clan promote <player name>");
-                    args.Player.SendInfoMessage("/clan demote <player name>");
+                    cmds.Add("prefix <chat prefix> - Add or change your clan's chat prefix.");
+                    cmds.Add("promote <player name> - Make a clanmember a clan admin.");
+                    cmds.Add("demote <player name> - Make a clan admin a regular clanmember.");
                 }
                 if (clanindex != -1 && (clans[clanindex].admins.Contains(args.Player.User.ID) || clans[clanindex].owner == args.Player.User.ID))
                 {
-                    args.Player.SendInfoMessage("/clan kick <player name>");
-                    args.Player.SendInfoMessage("/clan ban <player name>");
-                    args.Player.SendInfoMessage("/clan unban <player name>");
+                    cmds.Add("kick <player name> - Kick a clanmember from your clan.");
+                    cmds.Add("ban <player name> - Prevents a player from joining your clan.");
+                    cmds.Add("unban <player name> - Allows a banned player to join your clan.");
                 }
                 if (clanindex != -1 && (clans[clanindex].members.Contains(args.Player.User.ID) || clans[clanindex].admins.Contains(args.Player.User.ID) || clans[clanindex].owner == args.Player.User.ID))
                 {
-                    args.Player.SendInfoMessage("/clan invite <player name>");
-                    args.Player.SendInfoMessage("/clan leave");
+                    cmds.Add("invite <player name> - Sends a message to a player inviting them to join your clan.");
+                    cmds.Add("members - Lists all clanmembers in your clan.");
+                    cmds.Add("leave - Leaves your current clan.");
                 }
                 if (clanindex == -1)
                 {
-                    args.Player.SendInfoMessage("/clan create <clan name>");
-                    args.Player.SendInfoMessage("/clan join <clan name>");
+                    cmds.Add("create <clan name> - Creates a new clan.");
+                    cmds.Add("join <clan name> - Joins an existing clan.");
                 }
+
+                cmds.Add("list - Lists all existing clans.");
+
+                int pagenumber;
+
+                if (!PaginationTools.TryParsePageNumber(args.Parameters, 1, args.Player, out pagenumber))
+                    return;
+
+                PaginationTools.SendPage(args.Player, pagenumber, cmds, new PaginationTools.Settings
+                    {
+                        HeaderFormat = "Clan Sub-Commands ({0}/{1}):",
+                        FooterFormat = "Type {0}clan help {{0}} for more sub-commands.".SFormat(args.Silent ? TShock.Config.CommandSilentSpecifier : TShock.Config.CommandSpecifier)
+                    }
+                );
 
             }
             else if (args.Parameters.Count == 1 && args.Parameters[0].ToLower() == "leave")
@@ -161,15 +176,15 @@ namespace Clans3
                         //If player is admin
                         if (clans[clanindex].admins.Contains(args.Player.User.ID))
                         {
-                            DB.changeMembers(clans[clanindex].owner, clans[clanindex]);
                             clans[clanindex].admins.Remove(args.Player.User.ID);
+                            DB.changeMembers(clans[clanindex].owner, clans[clanindex]);
                             args.Player.SendSuccessMessage("You have left your Clan.");
                         }
                         //If player is not admin
                         else
                         {
-                            DB.changeMembers(clans[clanindex].owner, clans[clanindex]);
                             clans[clanindex].members.Remove(args.Player.User.ID);
+                            DB.changeMembers(clans[clanindex].owner, clans[clanindex]);
                             args.Player.SendSuccessMessage("You have left your Clan.");
                         }
                         TShock.Log.Info($"{args.Player.User.Name} left the {clans[clanindex].name} clan.");
@@ -181,13 +196,56 @@ namespace Clans3
                     args.Player.SendErrorMessage("You are not in a Clan!");
                 }
             }
-            else if (args.Parameters.Count == 1 && args.Parameters[0].ToLower() == "list")
+            else if (args.Parameters.Count > 0 && args.Parameters[0].ToLower() == "list")
             {
-                args.Player.SendInfoMessage("List of Clans: " + string.Join(", ", clans.Select(p => p.name)));
+                int pagenumber;
+                if (!PaginationTools.TryParsePageNumber(args.Parameters, 1, args.Player, out pagenumber))
+                    return;
+
+                PaginationTools.SendPage(args.Player, pagenumber, clans.Select(p => p.name).ToList(), new PaginationTools.Settings
+                {
+                    HeaderFormat = "List of Clans ({0}/{1}):",
+                    FooterFormat = "Type {0}clan list {{0}} for more clans.".SFormat(args.Silent ? TShock.Config.CommandSilentSpecifier : TShock.Config.CommandSpecifier)
+                });
             }
-            else if (args.Parameters.Count == 2)
+            else if (args.Parameters.Count > 0 && args.Parameters[0].ToLower() == "members")
+            {
+                if (clanindex == -1)
+                {
+                    args.Player.SendErrorMessage("You are not in a Clan!");
+                }
+                else
+                {
+                    int pagenumber;
+                    if (!PaginationTools.TryParsePageNumber(args.Parameters, 1, args.Player, out pagenumber))
+                        return;
+
+                    List<string> members = new List<string>();
+
+                    members.Add(TShock.Users.GetUserByID(clans[clanindex].owner).Name + " (Owner)");
+
+                    foreach(int userid in clans[clanindex].admins)
+                        members.Add(TShock.Users.GetUserByID(userid).Name + " (Admin)");
+                    foreach(int userid in clans[clanindex].members)
+                        members.Add(TShock.Users.GetUserByID(userid).Name);
+
+                    PaginationTools.SendPage(args.Player, pagenumber, members,
+                        new PaginationTools.Settings
+                        {
+                            HeaderFormat = clans[clanindex].name + " Clan Members ({0}/{1}):",
+                            FooterFormat = "Type {0}clan members {{0}} for more sub-commands.".SFormat(args.Silent ? TShock.Config.CommandSilentSpecifier : TShock.Config.CommandSpecifier)
+                        }
+                    );
+                }
+            }
+            else if (args.Parameters.Count > 1)
             {
                 string type = args.Parameters[0].ToLower();
+                
+                var tempparams = args.Parameters;
+                tempparams.RemoveAt(0);
+
+                string input = string.Join(" ", tempparams);
                 //Clan Create
                 if (type == "create")
                 {
@@ -196,22 +254,27 @@ namespace Clans3
                         args.Player.SendErrorMessage("You cannot create a Clan while you are in one!");
                         return;
                     }
-                    List<int> clanlist = findClanByName(args.Parameters[1]);
+                    List<int> clanlist = findClanByName(input);
                     if (clanlist.Count > 0)
                     {
                         foreach (int index in clanlist)
                         {
-                            if (clans[index].name == args.Parameters[1])
+                            if (clans[index].name == input)
                             {
                                 args.Player.SendErrorMessage("A Clan with this name has already been created!");
                                 return;
                             }
                         }
                     }
-                    clans.Add(new Clan(args.Parameters[1], args.Player.User.ID));
-                    DB.newClan(args.Parameters[1], args.Player.User.ID);
-                    args.Player.SendSuccessMessage($"You have created the {args.Parameters[1]} Clan! Use /clan prefix <prefix> to set the chat prefix.");
-                    TShock.Log.Info($"{args.Player.User.Name} created the {args.Parameters[1]} clan.");
+                    if (input.Contains("[c/") || input.Contains("[i"))
+                    {
+                        args.Player.SendErrorMessage("You cannot use item/color tags in clan names!");
+                        return;
+                    }
+                    clans.Add(new Clan(input, args.Player.User.ID));
+                    DB.newClan(input, args.Player.User.ID);
+                    args.Player.SendSuccessMessage($"You have created the {input} Clan! Use /clan prefix <prefix> to set the chat prefix.");
+                    TShock.Log.Info($"{args.Player.User.Name} created the {input} clan.");
                     return;
                 }
 
@@ -229,10 +292,21 @@ namespace Clans3
                         return;
                     }
 
-                    clans[clanindex].prefix = args.Parameters[1];
-                    DB.clanPrefix(args.Player.User.ID, args.Parameters[1]);
-                    args.Player.SendSuccessMessage($"Successfully changed the Clan prefix to {args.Parameters[1]}!");
-                    TShock.Log.Info($"{args.Player.User.Name} changed the {clans[clanindex].name} clan's prefix to {args.Parameters[1]}.");
+                    else if (input.Contains("[c/") || input.Contains("[i"))
+                    {
+                        args.Player.SendErrorMessage("You cannot use item/color tags in clan prefixes!");
+                        return;
+                    }
+                    else if (input.Length > 20)
+                    {
+                        args.Player.SendErrorMessage("Prefix length too long!");
+                        return;
+                    }
+
+                    clans[clanindex].prefix = input;
+                    DB.clanPrefix(args.Player.User.ID, input);
+                    args.Player.SendSuccessMessage($"Successfully changed the Clan prefix to {input}!");
+                    TShock.Log.Info($"{args.Player.User.Name} changed the {clans[clanindex].name} clan's prefix to {input}.");
                     return;
                 }
                 //Clan Invite
@@ -244,11 +318,11 @@ namespace Clans3
                         return;
                     }
 
-                    var list = TShock.Utils.FindPlayer(args.Parameters[1]);
+                    var list = TShock.Utils.FindPlayer(input);
 
                     if (list.Count == 0)
                     {
-                        args.Player.SendErrorMessage($"No players found by the name {args.Parameters[1]}.");
+                        args.Player.SendErrorMessage($"No players found by the name {input}.");
                         return;
                     }
                     else if (list.Count > 1)
@@ -282,11 +356,11 @@ namespace Clans3
                         return;
                     }
 
-                    List<int> clanindexlist = findClanByName(args.Parameters[1]);
+                    List<int> clanindexlist = findClanByName(input);
 
                     if (clanindexlist.Count == 0)
                     {
-                        args.Player.SendErrorMessage($"No Clans found by the name {args.Parameters[1]}.");
+                        args.Player.SendErrorMessage($"No Clans found by the name {input}.");
                         return;
                     }
                     else if (clanindexlist.Count > 1)
@@ -316,7 +390,8 @@ namespace Clans3
                         }
                     }
                     DB.changeMembers(clans[clanindexlist[0]].owner, clans[clanindex]);
-                    TShock.Log.Info($"{args.Player.User.Name} joined the {clans[clanindexlist[0]].name} Clan");
+                    TShock.Log.Info($"{args.Player.User.Name} joined the {clans[clanindexlist[0]].name} Clan.");
+                    args.Player.SendSuccessMessage($"You have joined the {clans[clanindexlist[0]].name} Clan!");
                     return;
                 }
                 //Clan Kick
@@ -332,10 +407,10 @@ namespace Clans3
                         args.Player.SendErrorMessage("You cannot kick players out of your Clan!");
                         return;
                     }
-                    var list = TShock.Utils.FindPlayer(args.Parameters[1]);
+                    var list = TShock.Utils.FindPlayer(input);
                     if (list.Count == 0)
                     {
-                        var plr2 = TShock.Users.GetUserByName(args.Parameters[1]);
+                        var plr2 = TShock.Users.GetUserByName(input);
                         if (plr2 != null)
                         {
                             int index = findClan(plr2.ID);
@@ -364,7 +439,7 @@ namespace Clans3
                         }
                         else
                         {
-                            args.Player.SendErrorMessage($"No player found by the name {args.Parameters[1]}.");
+                            args.Player.SendErrorMessage($"No player found by the name {input}.");
                             return;
                         }
                         return;
@@ -407,10 +482,10 @@ namespace Clans3
                         args.Player.SendErrorMessage("You cannot ban players from your Clan!");
                         return;
                     }
-                    var list = TShock.Utils.FindPlayer(args.Parameters[1]);
+                    var list = TShock.Utils.FindPlayer(input);
                     if (list.Count == 0)
                     {
-                        var plr2 = TShock.Users.GetUserByName(args.Parameters[1]);
+                        var plr2 = TShock.Users.GetUserByName(input);
                         if (plr2 != null)
                         {
                             int index = findClan(plr2.ID);
@@ -441,7 +516,7 @@ namespace Clans3
                         }
                         else
                         {
-                            args.Player.SendErrorMessage($"No player found by the name {args.Parameters[1]}.");
+                            args.Player.SendErrorMessage($"No player found by the name {input}.");
                             return;
                         }
                         return;
@@ -486,10 +561,10 @@ namespace Clans3
                         args.Player.SendErrorMessage("You cannot unban players from your Clan!");
                         return;
                     }
-                    var list = TShock.Utils.FindPlayer(args.Parameters[1]);
+                    var list = TShock.Utils.FindPlayer(input);
                     if (list.Count == 0)
                     {
-                        var plr2 = TShock.Users.GetUserByName(args.Parameters[1]);
+                        var plr2 = TShock.Users.GetUserByName(input);
                         if (plr2 != null)
                         {
                             if (!clans[clanindex].banned.Contains(plr2.ID))
@@ -506,7 +581,7 @@ namespace Clans3
                         }
                         else
                         {
-                            args.Player.SendErrorMessage($"No player found by the name {args.Parameters[1]}.");
+                            args.Player.SendErrorMessage($"No player found by the name {input}.");
                         }
                         return;
                     }
@@ -544,13 +619,13 @@ namespace Clans3
                         args.Player.SendErrorMessage("You cannot promote Clan members to admin in this Clan!");
                         return;
                     }
-                    var list = TShock.Utils.FindPlayer(args.Parameters[1]);
+                    var list = TShock.Utils.FindPlayer(input);
                     if (list.Count == 0)
                     {
-                        var plr = TShock.Users.GetUserByName(args.Parameters[1]);
+                        var plr = TShock.Users.GetUserByName(input);
                         if (plr == null)
                         {
-                            args.Player.SendErrorMessage($"No player found by the name {args.Parameters[1]}");
+                            args.Player.SendErrorMessage($"No player found by the name {input}");
                             return;
                         }
                         if (clans[clanindex].admins.Contains(plr.ID))
@@ -606,13 +681,13 @@ namespace Clans3
                         args.Player.SendErrorMessage("You cannot demote Clan members in this Clan!");
                         return;
                     }
-                    var list = TShock.Utils.FindPlayer(args.Parameters[1]);
+                    var list = TShock.Utils.FindPlayer(input);
                     if (list.Count == 0)
                     {
-                        var plr = TShock.Users.GetUserByName(args.Parameters[1]);
+                        var plr = TShock.Users.GetUserByName(input);
                         if (plr == null)
                         {
-                            args.Player.SendErrorMessage($"No player found by the name {args.Parameters[1]}");
+                            args.Player.SendErrorMessage($"No player found by the name {input}");
                             return;
                         }
                         if (!clans[clanindex].admins.Contains(plr.ID))

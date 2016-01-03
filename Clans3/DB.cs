@@ -81,7 +81,7 @@ namespace Clans3
                     if (banstr != "")
                     {
                         banstr = banstr.Trim(',');
-                        string[] bansplit = memberstr.Split(',');
+                        string[] bansplit = banstr.Split(',');
                         foreach (string str in bansplit)
                             banlist.Add(int.Parse(str));
                     }
