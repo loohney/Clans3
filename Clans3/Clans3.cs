@@ -132,7 +132,8 @@ namespace Clans3
                 }
                 if (clanindex != -1 && (clans[clanindex].members.Contains(args.Player.User.ID) || clans[clanindex].admins.Contains(args.Player.User.ID) || clans[clanindex].owner == args.Player.User.ID))
                 {
-                    cmds.Add("invite <player name> - Sends a message to a player inviting them to join your clan.");
+                    if (!(clans[clanindex].cprivate && clans[clanindex].members.Contains(args.Player.User.ID)))
+                        cmds.Add("invite <player name> - Sends a message to a player inviting them to join your clan.");
                     cmds.Add("members - Lists all clanmembers in your clan.");
                     cmds.Add("leave - Leaves your current clan.");
                 }
@@ -1234,7 +1235,7 @@ namespace Clans3
             foreach(TSPlayer plr in TShock.Players)
             {
                 if (plr != null && plr.Active && plr.IsLoggedIn && findClan(plr.User.ID) == chatindex)
-                    plr.SendMessage($"[Clanchat] {string.Join(" ", args.Parameters)}", Color.ForestGreen);
+                    plr.SendMessage($"(Clanchat) [{args.Player.Name}]: {string.Join(" ", args.Parameters)}", Color.ForestGreen);
             }
         }
         #endregion
