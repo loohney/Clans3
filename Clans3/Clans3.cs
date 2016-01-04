@@ -444,6 +444,12 @@ namespace Clans3
                         return;
                     }
 
+                    if (clans[clanindex].cprivate && clans[clanindex].members.Contains(args.Player.User.ID))
+                    {
+                        args.Player.SendErrorMessage("Only the clan owner/clan admins can invite players to the clan.");
+                        return;
+                    }
+
                     var plr = TShock.Users.GetUserByName(input);
 
                     if (plr == null)
@@ -513,19 +519,27 @@ namespace Clans3
                         args.Player.SendErrorMessage("You have been banned from this clan!");
                         return;
                     }
-                    clans[clanindexlist[0]].members.Add(args.Player.User.ID);
+                    if (clans[clanindex].cprivate && !clans[clanindex].invited.Contains(args.Player.User.ID))
+                    {
+                        args.Player.SendErrorMessage("You cannot join a private clan without an invitation!");
+                        return;
+                    }
+                    if (clans[clanindex].invited.Contains(args.Player.User.ID))
+                        clans[clanindex].invited.Remove(args.Player.User.ID);
+
+                    clans[clanindex].members.Add(args.Player.User.ID);
                     foreach (TSPlayer plr in TShock.Players)
                     {
                         if (plr != null && plr.Active && plr.IsLoggedIn && plr.Index != args.Player.Index)
                         {
                             int index = findClan(plr.User.ID);
-                            if (index == clanindexlist[0])
+                            if (index == clanindex)
                                 plr.SendInfoMessage($"{args.Player.Name} just joined your clan!");
                         }
                     }
-                    DB.changeMembers(clans[clanindexlist[0]].owner, clans[clanindex]);
-                    TShock.Log.Info($"{args.Player.User.Name} joined the {clans[clanindexlist[0]].name} clan.");
-                    args.Player.SendSuccessMessage($"You have joined the {clans[clanindexlist[0]].name} clan!");
+                    DB.changeMembers(clans[clanindex].owner, clans[clanindex]);
+                    TShock.Log.Info($"{args.Player.User.Name} joined the {clans[clanindex].name} clan.");
+                    args.Player.SendSuccessMessage($"You have joined the {clans[clanindex].name} clan!");
                     return;
                 }
                 #endregion
