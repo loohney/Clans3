@@ -2,12 +2,10 @@
 using System.Collections.Generic;
 using System.Data;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System.Timers;
 using Terraria;
 using TerrariaApi.Server;
 using TShockAPI;
-using TShockAPI.Hooks;
 
 namespace Clans3
 {
@@ -17,10 +15,11 @@ namespace Clans3
         public override string Name { get { return "Clans3"; } }
         public override string Author { get { return "Zaicon"; } }
         public override string Description { get { return "Clan Plugin for TShock"; } }
-        public override Version Version { get { return new Version(1, 0, 0, 0); } }
-
+        public override Version Version { get { return new Version(1, 3, 0, 0); } }
         
         public static List<Clan> clans;
+
+        public static Timer invitebc;
 
         public Clans3(Main game)
             :base(game)
@@ -55,10 +54,39 @@ namespace Clans3
             DB.DBConnect();
             DB.loadClans();
 
+            invitebc = new Timer(300000) { AutoReset = true, Enabled = true }; //5 min
+            invitebc.Elapsed += onUpdate;
+
+
             Commands.ChatCommands.Add(new Command("clans.use", ClansMain, "clan"));
             Commands.ChatCommands.Add(new Command("clans.use", CChat, "c"));
             Commands.ChatCommands.Add(new Command("clans.reload", CReload, "clanreload"));
             Commands.ChatCommands.Add(new Command("clans.mod", ClansStaff, "clanstaff", "cs"));
+        }
+
+        private void onUpdate(object sender, ElapsedEventArgs e)
+        {
+            foreach (Clan clan in clans)
+            {
+                if (clan.invited.Count > 0)
+                {
+                    foreach (int userid in clan.invited)
+                    {
+                        string name = TShock.Users.GetUserByID(userid).Name;
+                        List<TSPlayer> matches = TShock.Utils.FindPlayer(name);
+                        if (matches.Count > 0)
+                        {
+                            foreach (TSPlayer plr in matches)
+                            {
+                                if (plr.User.ID == userid)
+                                {
+                                    plr.SendInfoMessage($"You have been invited to the {clan.name} clan! Use '/clan accept' to join the clan or '/clan deny' to reject the invitation.");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         private void onChat(ServerChatEventArgs args)
@@ -88,12 +116,13 @@ namespace Clans3
             if (args.Parameters.Count > 0 && args.Parameters[0].ToLower() == "help")
             {
                 List<string> cmds = new List<string>();
-                
+
                 if (clanindex != -1 && clans[clanindex].owner == args.Player.User.ID)
                 {
                     cmds.Add("prefix <chat prefix> - Add or change your clan's chat prefix.");
                     cmds.Add("promote <player name> - Make a clanmember a clan admin.");
                     cmds.Add("demote <player name> - Make a clan admin a regular clanmember.");
+                    cmds.Add("private - Toggles your clan privacy; outside players cannot join your clan without an invite if your clan is set to Private.");
                 }
                 if (clanindex != -1 && (clans[clanindex].admins.Contains(args.Player.User.ID) || clans[clanindex].owner == args.Player.User.ID))
                 {
@@ -121,10 +150,10 @@ namespace Clans3
                     return;
 
                 PaginationTools.SendPage(args.Player, pagenumber, cmds, new PaginationTools.Settings
-                    {
-                        HeaderFormat = "Clan Sub-Commands ({0}/{1}):",
-                        FooterFormat = "Type {0}clan help {{0}} for more sub-commands.".SFormat(args.Silent ? TShock.Config.CommandSilentSpecifier : TShock.Config.CommandSpecifier)
-                    }
+                {
+                    HeaderFormat = "Clan Sub-Commands ({0}/{1}):",
+                    FooterFormat = "Type {0}clan help {{0}} for more sub-commands.".SFormat(args.Silent ? TShock.Config.CommandSilentSpecifier : TShock.Config.CommandSpecifier)
+                }
                 );
 
             }
@@ -207,16 +236,18 @@ namespace Clans3
                 if (!PaginationTools.TryParsePageNumber(args.Parameters, 1, args.Player, out pagenumber))
                     return;
 
-                SortedDictionary<int, string> cdict = new SortedDictionary<int, string>();
+                Dictionary<string, int> cdict = new Dictionary<string, int>();
 
-                foreach(Clan clan in clans)
+                foreach (Clan clan in clans)
                 {
                     int count = 1 + clan.admins.Count + clan.members.Count;
-                    if (!clan.banned.Contains(args.Player.User.ID))
-                        cdict.Add(count, clan.name);
+                    if (!clan.banned.Contains(args.Player.User.ID) && !clan.cprivate)
+                        cdict.Add(clan.name, count);
                 }
-                
-                PaginationTools.SendPage(args.Player, pagenumber, cdict.Values.ToList().Reverse<string>().ToList(), new PaginationTools.Settings
+
+                var sorteddict = from entry in cdict orderby entry.Value descending select entry.Key;
+
+                PaginationTools.SendPage(args.Player, pagenumber, sorteddict.ToList(), new PaginationTools.Settings
                 {
                     HeaderFormat = "List of Clans ({0}/{1}):",
                     FooterFormat = "Type {0}clan list {{0}} for more clans.".SFormat(args.Silent ? TShock.Config.CommandSilentSpecifier : TShock.Config.CommandSpecifier)
@@ -240,10 +271,12 @@ namespace Clans3
 
                     members.Add(TShock.Users.GetUserByID(clans[clanindex].owner).Name + " (Owner)");
 
-                    foreach(int userid in clans[clanindex].admins)
+                    foreach (int userid in clans[clanindex].admins)
                         members.Add(TShock.Users.GetUserByID(userid).Name + " (Admin)");
-                    foreach(int userid in clans[clanindex].members)
+                    foreach (int userid in clans[clanindex].members)
                         members.Add(TShock.Users.GetUserByID(userid).Name);
+                    foreach (int userid in clans[clanindex].invited)
+                        members.Add(TShock.Users.GetUserByID(userid).Name + " (Invited)");
 
                     PaginationTools.SendPage(args.Player, pagenumber, members,
                         new PaginationTools.Settings
@@ -255,10 +288,82 @@ namespace Clans3
                 }
             }
             #endregion
+            #region clan private
+            else if (args.Parameters.Count == 1 && args.Parameters[0].ToLower() == "private")
+            {
+                if (clanindex == -1)
+                {
+                    args.Player.SendErrorMessage("You are not in a clan!");
+                }
+                else if (clans[clanindex].owner != args.Player.User.ID)
+                {
+                    args.Player.SendErrorMessage("Only clan owners can set the clan privacy setting!");
+                }
+                else
+                {
+                    clans[clanindex].cprivate = !clans[clanindex].cprivate;
+                    DB.changePrivate(clans[clanindex].owner, clans[clanindex].cprivate);
+                    TShock.Log.Info($"{args.Player.User.Name} changed the {clans[clanindex].name} clan's privacy setting to " + (clans[clanindex].cprivate ? "private." : "public."));
+                    args.Player.SendSuccessMessage("Successfully set your clan to " + (clans[clanindex].cprivate ? "private." : "public."));
+                }
+            }
+            #endregion
+            #region clan accept/deny
+            else if (args.Parameters.Count == 1 && args.Parameters[0].ToLower() == "accept")
+            {
+                if (clanindex != -1)
+                {
+                    args.Player.SendErrorMessage("You are already in a clan!");
+                }
+                else
+                {
+                    int iclanindex = getInvite(args.Player.User.ID);
+                    if (iclanindex == -1)
+                    {
+                        args.Player.SendErrorMessage("You have not been invited to join a clan!");
+                    }
+                    else
+                    {
+                        clans[iclanindex].invited.Remove(args.Player.User.ID);
+                        clans[iclanindex].members.Add(args.Player.User.ID);
+                        foreach (TSPlayer plr in TShock.Players)
+                        {
+                            if (plr != null && plr.Active && plr.IsLoggedIn)
+                            {
+                                if (findClan(plr.User.ID) == iclanindex)
+                                {
+                                    plr.SendInfoMessage($"{args.Player.Name} just joined the {clans[iclanindex].name} clan!");
+                                }
+                            }
+                        }
+                        TShock.Log.Info($"{args.Player.User.Name} accepted the invite to join the {clans[iclanindex].name} clan.");
+                        DB.changeMembers(clans[iclanindex].owner, clans[iclanindex]);
+                    }
+                }
+            }
+            else if (args.Parameters.Count == 1 && args.Parameters[0].ToLower() == "deny")
+            {
+                if (clanindex != -1)
+                {
+                    args.Player.SendErrorMessage("You are already in a clan!");
+                }
+                else
+                {
+                    int iclanindex = getInvite(args.Player.User.ID);
+                    if (iclanindex == -1)
+                        args.Player.SendErrorMessage("You have not been invited to join a clan!");
+                    else
+                    {
+                        clans[iclanindex].invited.Remove(args.Player.User.ID);
+                        args.Player.SendSuccessMessage("Denied your clan invitation.");
+                    }
+                }
+            }
+            #endregion
             else if (args.Parameters.Count > 1)
             {
                 string type = args.Parameters[0].ToLower();
-                
+
                 var tempparams = args.Parameters;
                 tempparams.RemoveAt(0);
 
@@ -339,38 +444,39 @@ namespace Clans3
                         return;
                     }
 
-                    var list = TShock.Utils.FindPlayer(input);
+                    var plr = TShock.Users.GetUserByName(input);
 
-                    if (list.Count == 0)
+                    if (plr == null)
                     {
                         args.Player.SendErrorMessage($"No players found by the name {input}.");
                         return;
                     }
-                    else if (list.Count > 1)
-                    {
-                        TShock.Utils.SendMultipleMatchError(args.Player, list.Select(p => p.Name));
-                        return;
-                    }
 
-                    int index = findClan(list[0].User.ID);
+                    int index = findClan(plr.ID);
+                    int invite = getInvite(plr.ID);
                     if (index == clanindex)
-                    {
                         args.Player.SendErrorMessage("This player is already part of your clan!");
-                        return;
-                    }
-                    if (index != -1)
-                    {
+                    else if (index != -1)
                         args.Player.SendErrorMessage("This player is already in a clan!");
-                        return;
-                    }
-                    if (clans[clanindex].banned.Contains(list[0].User.ID))
-                    {
+                    else if (clans[clanindex].banned.Contains(plr.ID))
                         args.Player.SendErrorMessage("This player is banned from your clan and cannot be invited.");
-                        return;
-                    }
+                    else if (invite != -1 && invite != clanindex)
+                        args.Player.SendErrorMessage("This player has already been invited to a different clan and must accept or deny his/her first invitation.");
+                    else if (invite != -1 && invite == clanindex)
+                        args.Player.SendErrorMessage("This player has already been invited to your clan!");
+                    else
+                    {
+                        clans[clanindex].invited.Add(plr.ID);
 
-                    args.Player.SendSuccessMessage($"{list[0].Name} has been invited to join the {clans[clanindex].name} clan!");
-                    list[0].SendInfoMessage($"{args.Player.Name} has invited you to join the {clans[clanindex].name} clan! Use /clan join \"{clans[clanindex].name}\" to join the Clan!");
+                        string name = TShock.Users.GetUserByID(plr.ID).Name;
+                        List<TSPlayer> matches = TShock.Utils.FindPlayer(name);
+                        if (matches.Count > 0)
+                            foreach (TSPlayer match in matches)
+                                if (match.User?.ID == plr.ID)
+                                    match.SendInfoMessage($"You have been invited to the {clans[clanindex].name} clan! Use '/clan accept' to join the clan or '/clan deny' to reject the invitation.");
+
+                        args.Player.SendSuccessMessage($"{plr.Name} has been invited to join the {clans[clanindex].name} clan!");
+                    }
                     return;
                 }
                 #endregion
@@ -474,7 +580,7 @@ namespace Clans3
                         }
                         return;
                     }
-                    else if (list.Count > 1)
+                    else if (list.Count > 1 && list[0].Name != input)
                     {
                         TShock.Utils.SendMultipleMatchError(args.Player, list.Select(p => p.Name));
                         return;
@@ -553,7 +659,7 @@ namespace Clans3
                         }
                         return;
                     }
-                    else if (list.Count > 1)
+                    else if (list.Count > 1 && list[0].Name != input)
                     {
                         TShock.Utils.SendMultipleMatchError(args.Player, list.Select(p => p.Name));
                         return;
@@ -617,7 +723,7 @@ namespace Clans3
                         }
                         return;
                     }
-                    else if (list.Count > 1)
+                    else if (list.Count > 1 && list[0].Name != input)
                     {
                         TShock.Utils.SendMultipleMatchError(args.Player, list.Select(p => p.Name));
                         return;
@@ -679,7 +785,7 @@ namespace Clans3
                         TShock.Log.Info($"{args.Player.User.Name} made {plr.Name} an admin of the {clans[clanindex].name} clan.");
                         return;
                     }
-                    if (list.Count > 1)
+                    if (list.Count > 1 && list[0].Name != input)
                     {
                         TShock.Utils.SendMultipleMatchError(args.Player, list.Select(p => p.Name));
                         return;
@@ -736,7 +842,7 @@ namespace Clans3
                         TShock.Log.Info($"{args.Player.User.Name} demoted {plr.Name} from admin in the {clans[clanindex].name} clan.");
                         return;
                     }
-                    if (list.Count > 1)
+                    if (list.Count > 1 && list[0].Name != input)
                     {
                         TShock.Utils.SendMultipleMatchError(args.Player, list.Select(p => p.Name));
                         return;
@@ -848,6 +954,8 @@ namespace Clans3
                             members.Add(TShock.Users.GetUserByID(userid).Name + " (Admin)");
                         foreach (int userid in clans[clanindex].members)
                             members.Add(TShock.Users.GetUserByID(userid).Name);
+                        foreach (int userid in clans[clanindex].invited)
+                            members.Add(TShock.Users.GetUserByID(userid).Name + " (Invited)");
 
                         PaginationTools.SendPage(args.Player, pagenumber, members,
                             new PaginationTools.Settings
@@ -1147,9 +1255,22 @@ namespace Clans3
             {
                 if (clans[i].name.Contains(name))
                     clanslist.Add(i);
+
+                if (clans[i].name == name) //exact match
+                    return new List<int>() { i };
             }
 
             return clanslist;
+        }
+
+        private int getInvite(int userid)
+        {
+            for (int i = 0; i < clans.Count; i++)
+            {
+                if (clans[i].invited.Contains(userid))
+                    return i;
+            }
+            return -1;
         }
         #endregion
     }

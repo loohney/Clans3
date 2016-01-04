@@ -45,7 +45,8 @@ namespace Clans3
                 new SqlColumn("admins", MySqlDbType.Text) { Length = 100 },
                 new SqlColumn("members", MySqlDbType.Text) { Length = 100 },
                 new SqlColumn("prefix", MySqlDbType.Text) { Length = 30 },
-                new SqlColumn("banned", MySqlDbType.Text) { Length = 100 }));
+                new SqlColumn("banned", MySqlDbType.Text) { Length = 100 },
+                new SqlColumn("priv", MySqlDbType.Int32) { Length = 1 }));
         }
 
         public static void loadClans()
@@ -85,13 +86,17 @@ namespace Clans3
                         foreach (string str in bansplit)
                             banlist.Add(int.Parse(str));
                     }
-                    
+
+                    bool ispriv = reader.Get<int>("priv") == 1 ? true : false;
+
                     Clans3.clans.Add(new Clan(reader.Get<string>("name"), reader.Get<int>("owner"))
                     {
                         admins = adminlist,
                         banned = banlist,
                         members = memberlist,
-                        prefix = reader.Get<string>("prefix")
+                        prefix = reader.Get<string>("prefix"),
+                        cprivate = ispriv,
+                        invited = new List<int>()
                     });
                 }
             }
@@ -163,6 +168,14 @@ namespace Clans3
             int result = db.Query("UPDATE Clans SET banned=@0 WHERE owner=@1;", banned, owner);
             if (result != 1)
                 TShock.Log.Error($"Database error: Failed to update banned list where owner = {owner}.");
+        }
+
+        public static void changePrivate(int owner, bool isPrivate)
+        {
+            int newpriv = isPrivate ? 1 : 0;
+            int result = db.Query("UPDATE Clans SET priv=@0 WHERE owner=@1;", newpriv, owner);
+            if (result != 1)
+                TShock.Log.Error($"Database error: Failed to update private setting where owner = {owner}.");
         }
         
     }
