@@ -146,7 +146,7 @@ namespace Clans3
 
         public static void newClan(string name, int owner)
         {
-            int result = db.Query("INSERT INTO Clans (owner, name, admins, members, prefix, banned) VALUES (@0, @1, '', '', '', '');", owner, name);
+            int result = db.Query("INSERT INTO Clans (owner, name, admins, members, prefix, banned, priv) VALUES (@0, @1, '', '', '', '', @2);", owner, name, 0);
             if (result != 1)
                 TShock.Log.Error($"Database error: Failed to create a new clan with owner = {owner}.");
         }
