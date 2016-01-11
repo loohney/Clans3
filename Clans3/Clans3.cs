@@ -443,6 +443,7 @@ namespace Clans3
                             args.Player.SendErrorMessage($"Player not found: {plr.Name}");
                         }
                     }
+                    return;
                 }
                 #endregion
                 #region clan prefix
