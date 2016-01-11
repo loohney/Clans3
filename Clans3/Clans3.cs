@@ -144,6 +144,7 @@ namespace Clans3
                 }
 
                 cmds.Add("list - Lists all existing clans.");
+                cmds.Add("check <player name> - Checks to see which clan the specified player is in.");
 
                 int pagenumber;
 
@@ -402,6 +403,48 @@ namespace Clans3
                     return;
                 }
                 #endregion
+                #region clan check
+                if (type == "check")
+                {
+                    var plist = TShock.Utils.FindPlayer(input);
+                    if (plist.Count == 1)
+                    {
+                        TSPlayer plr = plist[0];
+
+                        int index = findClan(plr.User.ID);
+
+                        if (findClan(plr.User.ID) != -1)
+                            args.Player.SendInfoMessage($"{plr.Name} is in the {clans[index].name} clan!");
+                        else
+                            args.Player.SendInfoMessage($"{plr.Name} is not in a clan!");
+
+                        return;
+                    }
+                    else if (plist.Count > 1)
+                    {
+                        TShock.Utils.SendMultipleMatchError(args.Player, plist.Select(p => p.Name));
+                        return;
+                    }
+                    else
+                    {
+                        var plr = TShock.Users.GetUserByName(input);
+
+                        if (plr != null)
+                        {
+                            int index = findClan(plr.ID);
+
+                            if (index == -1)
+                                args.Player.SendInfoMessage($"{plr.Name} is not in a clan!");
+                            else
+                                args.Player.SendInfoMessage($"{plr.Name} is in the {clans[index].name} clan!");
+                        }
+                        else
+                        {
+                            args.Player.SendErrorMessage($"Player not found: {plr.Name}");
+                        }
+                    }
+                }
+                #endregion
                 #region clan prefix
                 //Clan Prefix
                 if (type == "prefix")
@@ -471,6 +514,8 @@ namespace Clans3
                         args.Player.SendErrorMessage("This player has already been invited to a different clan and must accept or deny his/her first invitation.");
                     else if (invite != -1 && invite == clanindex)
                         args.Player.SendErrorMessage("This player has already been invited to your clan!");
+                    else if (!TShock.Groups.GetGroupByName(plr.Group).HasPermission("clans.use"))
+                        args.Player.SendErrorMessage("This player does not have access to the clan commands!");
                     else
                     {
                         clans[clanindex].invited.Add(plr.ID);
